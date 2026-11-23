@@ -324,3 +324,129 @@ gcode:
     M117 Nozzle Clean!
 
 
+[gcode_macro LOAD_FILAMENT]
+description: Heats hotend if needed, parks front-center, and loads filament into Galileo 2E + Mosquito
+gcode:
+    # ==================================================================
+    # 1. PARAMETERS & DISTANCES (Tuned for Galileo 2E + Mosquito)
+    # ==================================================================
+    {% set target_temp = params.TEMP|default(245)|int %}     # Defaults to 245C (ABS/ASA); override with TEMP=215 for PLA
+    {% set load_distance = 55 %}                           # Distance from Galileo 2E gear to Mosquito nozzle tip (mm)
+    {% set purge_distance = 40 %}                          # Extra filament to purge out old color (mm)
+
+    # Front-center park coordinates for easy access
+    {% set park_x = printer.toolhead.axis_maximum.x|float / 2 %}
+    {% set park_y = 30.0 %}                                # 30mm from front edge of bed
+    {% set park_z = 50.0 %}                                # 50mm height (keeps nozzle easy to wipe & clear of rear brush)
+
+    # ==================================================================
+    # 2. SAVE STATE & MOVE TO FRONT OF PRINTER
+    # ==================================================================
+    SAVE_GCODE_STATE NAME=LOAD_FILAMENT_STATE
+
+    # Home only if not already homed
+    {% if "xyz" not in printer.toolhead.homed_axes %}
+        M117 Homing...
+        G28
+    {% endif %}
+
+    G90                                                    # Absolute positioning
+    # Lift Z first if below 50mm so we never scrape bed or rear brush
+    {% if printer.toolhead.position.z < park_z %}
+        G1 Z{park_z} F3000
+    {% endif %}
+    G1 X{park_x} Y{park_y} F9000                           # Move to front-center for easy reach
+
+    # ==================================================================
+    # 3. CHECK TEMPERATURE & HEAT IF NEEDED
+    # ==================================================================
+    {% if printer.extruder.temperature < (target_temp - 5) %}
+        M117 Heating to {target_temp}C...
+        M109 S{target_temp}                                # Heat nozzle and wait
+    {% endif %}
+
+    # ==================================================================
+    # 4. LOAD & PURGE SEQUENCE
+    # ==================================================================
+    M117 Loading Filament...
+    M83                                                    # Set extruder to relative mode (M83 only affects E axis)
+    G92 E0                                                 # Zero extruder
+
+    # Feed filament down through Galileo 2E into Mosquito melt zone at 5 mm/s (300 mm/min)
+    G1 E{load_distance} F300
+
+    # Slowly purge old color out of the nozzle at 2.5 mm/s (150 mm/min)
+    M117 Purging...
+    G1 E{purge_distance} F150
+
+    # Slight retraction (2mm) to stop oozing while you grab the purged noodle
+    G1 E-2.0 F1800
+
+    M400                                                   # Wait for extrusion moves to complete
+    RESTORE_GCODE_STATE NAME=LOAD_FILAMENT_STATE
+    M117 Filament Loaded!
+
+
+[gcode_macro UNLOAD_FILAMENT]
+description: Heats hotend if needed, shapes tip, and unloads filament from Galileo 2E + Mosquito
+gcode:
+    # ==================================================================
+    # 1. PARAMETERS & DISTANCES (Tuned for Galileo 2E + Mosquito)
+    # ==================================================================
+    {% set target_temp = params.TEMP|default(245)|int %}     # Defaults to 245C (ABS/ASA); override with TEMP=215 for PLA
+    {% set unload_distance = 75 %}                         # Total retraction to clear Galileo 2E drive gears completely
+
+    # Front-center park coordinates
+    {% set park_x = printer.toolhead.axis_maximum.x|float / 2 %}
+    {% set park_y = 30.0 %}
+    {% set park_z = 50.0 %}
+
+    # ==================================================================
+    # 2. SAVE STATE & MOVE TO FRONT OF PRINTER
+    # ==================================================================
+    SAVE_GCODE_STATE NAME=UNLOAD_FILAMENT_STATE
+
+    {% if "xyz" not in printer.toolhead.homed_axes %}
+        M117 Homing...
+        G28
+    {% endif %}
+
+    G90
+    {% if printer.toolhead.position.z < park_z %}
+        G1 Z{park_z} F3000
+    {% endif %}
+    G1 X{park_x} Y{park_y} F9000
+
+    # ==================================================================
+    # 3. CHECK TEMPERATURE & HEAT IF NEEDED
+    # ==================================================================
+    {% if printer.extruder.temperature < (target_temp - 5) %}
+        M117 Heating to {target_temp}C...
+        M109 S{target_temp}
+    {% endif %}
+
+    # ==================================================================
+    # 4. TIP-SHAPING & UNLOAD SEQUENCE
+    # ==================================================================
+    M117 Unloading Filament...
+    M83                                                    # Set extruder to relative mode
+    G92 E0
+
+    # Step 1: Push 5mm forward to melt any cold plug at the tip
+    G1 E5.0 F300
+
+    # Step 2: Fast jerk backward (15mm at 40 mm/s) to snap molten plastic cleanly in Mosquito heatbreak
+    G1 E-15.0 F2400
+
+    # Step 3: Pause 2 seconds to let the pulled tip cool slightly above the melt zone
+    G4 P2000
+
+    # Step 4: Back filament completely out of the Galileo 2E gears at 10 mm/s (600 mm/min)
+    G1 E-{unload_distance} F600
+
+    M400
+    RESTORE_GCODE_STATE NAME=UNLOAD_FILAMENT_STATE
+    M117 Filament Unloaded!
+
+
+

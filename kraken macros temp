@@ -1,0 +1,146 @@
+[gcode_macro PRINT_START]
+description: Pre-print sequence with 30-min heat soak for V2.4 350 AWD
+gcode:
+    # ------------------------------------------------------------------
+    # 1. PULL VARIABLES FROM SLICER
+    # ------------------------------------------------------------------
+    {% set target_bed = params.BED|int %}                  # Target bed temp from slicer
+    {% set target_extruder = params.EXTRUDER|int %}        # Target hotend temp from slicer
+    {% set soak_minutes = 30 %}                            # Heat soak duration in minutes for high-temp prints
+    
+    # Calculate the center of your 350x350 bed dynamically
+    {% set x_wait = printer.toolhead.axis_maximum.x|float / 2 %}
+    {% set y_wait = printer.toolhead.axis_maximum.y|float / 2 %}
+
+    # ------------------------------------------------------------------
+    # 2. INITIAL HOMING & BED HEATING
+    # ------------------------------------------------------------------
+    M117 Homing...                                         # Update Knomi / screen status
+    G28                                                    # Home all axes (X, Y, Z)
+    G90                                                    # Set to absolute positioning
+    BED_MESH_CLEAR                                         # Clear any old bed mesh
+
+    # Start heating the bed
+    M140 S{target_bed}
+    G1 X{x_wait} Y{y_wait} Z15 F9000                       # Move toolhead to center of bed
+
+    # ------------------------------------------------------------------
+    # 3. HEAT SOAK & AIR MANAGEMENT
+    # ------------------------------------------------------------------
+    {% if target_bed > 90 %}
+        # High-temp filament (ABS/ASA): Turn on Nevermore, seal chamber, wait for bed + 30 min soak
+        SET_FAN_SPEED FAN=nevermore SPEED=1.0              # Nevermore at 100% to circulate hot air
+        SET_FAN_SPEED FAN=exhaust_fan SPEED=0.0            # Exhaust OFF to trap heat
+        
+        M117 Heating Bed...
+        M190 S{target_bed}                                 # Wait for 750W Keenovo to hit target temp
+
+        # Loop 30 times, waiting 1 minute (60,000 ms) per loop and updating screen
+        {% for i in range(soak_minutes) %}
+            {% set remaining = soak_minutes - i %}
+            M117 Soaking: {remaining}m left                # Displays countdown on Knomi / console
+            G4 P60000                                      # Pause for 60 seconds
+        {% endfor %}
+    {% else %}
+        # Low-temp filament (PLA/PETG): No heat soak needed
+        M117 Heating Bed...
+        SET_FAN_SPEED FAN=nevermore SPEED=0.0              # Nevermore OFF
+        SET_FAN_SPEED FAN=exhaust_fan SPEED=0.5            # Exhaust at 50% to prevent heat creep
+        M190 S{target_bed}                                 # Wait for bed temp
+    {% endif %}
+
+    # ------------------------------------------------------------------
+    # 4. VORON TAP SAFE PROBING (NOZZLE AT 150C)
+    # ------------------------------------------------------------------
+    M117 Heating Nozzle to 150C...
+    M109 S150                                              # Heat nozzle to 150C (safe for Tap)
+
+    M117 Quad Gantry Leveling...
+    QUAD_GANTRY_LEVEL                                      # Level the 4 Z drives
+    G28 Z                                                  # Re-home Z after gantry is leveled (CRITICAL for Tap)
+
+    # ------------------------------------------------------------------
+    # 5. ADAPTIVE BED MESH & FINAL HEATING
+    # ------------------------------------------------------------------
+    M117 Adaptive Bed Meshing...
+    BED_MESH_CALIBRATE ADAPTIVE=1                          # Requires [exclude_object] in printer.cfg
+
+    M117 Heating Hotend...
+    G1 X10 Y10 Z15 F9000                                   # Move near front-left corner while heating
+    M109 S{target_extruder}                                # Heat nozzle to full printing temperature
+
+    # Simple Purge Line at front of 350mm bed
+    M117 Purging...
+    G92 E0                                                 # Reset extruder position
+    G1 X10 Y5 Z0.3 F5000.0                                 # Move to start position
+    G1 X160 Y5 Z0.3 F1500.0 E15                            # Draw first line
+    G1 X160 Y5.4 Z0.3 F5000.0                              # Shift over slightly
+    G1 X10 Y5.4 Z0.3 F1500.0 E30                           # Draw second line
+    G92 E0                                                 # Reset extruder again
+    G1 Z2.0 F3000                                          # Lift nozzle slightly before starting print
+
+    M117 Printing!
+
+
+[gcode_macro PRINT_END]
+description: Post-print sequence, safe parking, and VOC air scrub
+gcode:
+    # ------------------------------------------------------------------
+    # 1. SAVE BOUNDARIES & CURRENT POSITION
+    # ------------------------------------------------------------------
+    # Grab max travel limits from printer.cfg so we never crash into the frame
+    {% set max_x = printer.toolhead.axis_maximum.x|float %}
+    {% set max_y = printer.toolhead.axis_maximum.y|float %}
+    {% set max_z = printer.toolhead.axis_maximum.z|float %}
+    {% set current_z = printer.toolhead.position.z|float %}
+
+    # Calculate safe Z lift (lift 20mm, or stop 5mm short of top frame if print is very tall)
+    {% if current_z < (max_z - 25) %}
+        {% set z_safe = 20.0 %}
+    {% else %}
+        {% set z_safe = max_z - current_z - 5.0 %}
+    {% endif %}
+
+    # Grab the bed target temp before we turn heaters off so we know if it was an ABS print
+    {% set bed_temp = printer.heater_bed.target|int %}
+
+    # ------------------------------------------------------------------
+    # 2. RETRACT & LIFT IMMEDIATELY
+    # ------------------------------------------------------------------
+    M400                                                   # Wait for all print moves to finish
+    G92 E0                                                 # Zero the extruder
+    G1 E-5.0 F3600                                         # Retract 5mm fast to prevent oozing (safe for Mosquito)
+    
+    G91                                                    # Switch to relative positioning
+    G0 Z{z_safe} F3000                                     # Lift nozzle straight up off the print
+    G90                                                    # Switch back to absolute positioning
+
+    # ------------------------------------------------------------------
+    # 3. SHUT DOWN HEATERS & PARK TOOLHEAD
+    # ------------------------------------------------------------------
+    TURN_OFF_HEATERS                                       # Turn off hotend and 750W bed heater
+    M107                                                   # Turn off Stealthburner part cooling fan
+    
+    # Park toolhead at back-right corner (10mm away from physical max limits)
+    G0 X{max_x - 10} Y{max_y - 10} F9000                   
+    BED_MESH_CLEAR                                         # Clear active bed mesh
+
+    # ------------------------------------------------------------------
+    # 4. POST-PRINT AIR SCRUBBING (NEVERMORE)
+    # ------------------------------------------------------------------
+    {% if bed_temp > 90 %}
+        M117 Scrubbing VOCs (10m)...
+        SET_FAN_SPEED FAN=nevermore SPEED=1.0              # Keep Nevermore running at 100%
+        SET_FAN_SPEED FAN=exhaust_fan SPEED=0.0            # Keep exhaust closed so Nevermore traps fumes
+        G4 P600000                                         # Run scrub cycle for 10 minutes (600,000 ms)
+    {% endif %}
+
+    # Shut down filtration fans and finish
+    SET_FAN_SPEED FAN=nevermore SPEED=0.0                  # Turn off Nevermore
+    SET_FAN_SPEED FAN=exhaust_fan SPEED=0.0                # Turn off exhaust fan
+    M117 Print Complete!
+
+
+[idle_timeout]
+timeout: 3600  # 1 hour timeout
+

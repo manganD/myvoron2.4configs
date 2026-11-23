@@ -144,3 +144,183 @@ gcode:
 [idle_timeout]
 timeout: 3600  # 1 hour timeout
 
+
+# ======================================================================
+# 1. HARDWARE DEFINITIONS (Verify pins against your Kraken & EBB pinouts)
+# ======================================================================
+
+[neopixel sb_leds]
+pin: EBBCan:PD3                  # Check your EBB SB2209 RP2040 pinout (usually PD3 or GPIO16)
+chain_count: 10                  # 8 Logo LEDs (BARF) + 2 Nozzle LEDs
+color_order: GRBW                # Standard for Voron Stealthburner BARF + Nozzle LEDs
+initial_RED: 0.2
+initial_GREEN: 0.0
+initial_BLUE: 0.2
+initial_WHITE: 0.0
+
+[neopixel chamber_leds]
+pin: PF12                        # Check your BTT Kraken 1.1 RGB header pin (e.g., PF12 or PE6)
+chain_count: 36                  # 2 sticks x 18 LEDs wired in series
+color_order: GRB                 # Standard WS2812B strips (adjust to RGB if colors look swapped)
+initial_RED: 0.3
+initial_GREEN: 0.3
+initial_BLUE: 0.3
+
+# ======================================================================
+# 2. BASE HELPER MACROS (Building blocks called by status macros)
+# ======================================================================
+
+[gcode_macro _SET_SB_LOGO]
+description: Sets the color of the 8 BARF logo LEDs (Indexes 1 to 8)
+gcode:
+    {% set r = params.R|default(0)|float %}
+    {% set g = params.G|default(0)|float %}
+    {% set b = params.B|default(0)|float %}
+    {% set w = params.W|default(0)|float %}
+
+    # Loop through LEDs 1 to 8. TRANSMIT=0 buffers the change; TRANSMIT=1 sends it all at once
+    {% for i in range(1, 9) %}
+        SET_LED LED=sb_leds RED={r} GREEN={g} BLUE={b} WHITE={w} INDEX={i} TRANSMIT={1 if i == 8 else 0}
+    {% endfor %}
+
+[gcode_macro _SET_SB_NOZZLE]
+description: Sets the 2 nozzle spotlight LEDs (Indexes 9 and 10)
+gcode:
+    {% set r = params.R|default(0)|float %}
+    {% set g = params.G|default(0)|float %}
+    {% set b = params.B|default(0)|float %}
+    {% set w = params.W|default(0)|float %}
+
+    SET_LED LED=sb_leds RED={r} GREEN={g} BLUE={b} WHITE={w} INDEX=9 TRANSMIT=0
+    SET_LED LED=sb_leds RED={r} GREEN={g} BLUE={b} WHITE={w} INDEX=10 TRANSMIT=1
+
+# ======================================================================
+# 3. CHAMBER LIGHT CONTROLS (Buttons show up directly in Mainsail/Fluidd)
+# ======================================================================
+
+[gcode_macro CHAMBER_LIGHTS_ON]
+description: Turns all 36 chamber LEDs on to bright neutral white
+gcode:
+    # No INDEX specified = updates all 36 LEDs in one instant command
+    SET_LED LED=chamber_leds RED=0.8 GREEN=0.8 BLUE=0.8 TRANSMIT=1
+
+[gcode_macro CHAMBER_LIGHTS_DIM]
+description: Dims chamber LEDs to 25% for camera/night viewing
+gcode:
+    SET_LED LED=chamber_leds RED=0.25 GREEN=0.25 BLUE=0.25 TRANSMIT=1
+
+[gcode_macro CHAMBER_LIGHTS_OFF]
+description: Turns all 36 chamber LEDs off
+gcode:
+    SET_LED LED=chamber_leds RED=0.0 GREEN=0.0 BLUE=0.0 TRANSMIT=1
+
+# ======================================================================
+# 4. PRINTER STATUS MACROS (Drop these names into your PRINT_START / END)
+# ======================================================================
+
+[gcode_macro STATUS_READY]
+description: Idle / Ready state (Soft Voron Purple logo, dim chamber)
+gcode:
+    _SET_SB_LOGO R=0.3 G=0.0 B=0.4 W=0.0
+    _SET_SB_NOZZLE R=0.0 G=0.0 B=0.0 W=0.2
+    CHAMBER_LIGHTS_DIM
+
+[gcode_macro STATUS_HEATING]
+description: Heating bed/nozzle or Heat Soaking (Warm Orange/Red)
+gcode:
+    _SET_SB_LOGO R=0.8 G=0.15 B=0.0 W=0.0
+    _SET_SB_NOZZLE R=0.0 G=0.0 B=0.0 W=0.0
+    SET_LED LED=chamber_leds RED=0.6 GREEN=0.1 BLUE=0.0 TRANSMIT=1
+
+[gcode_macro STATUS_LEVELING]
+description: Homing, QGL, and Adaptive Bed Meshing (Cyan/Teal)
+gcode:
+    _SET_SB_LOGO R=0.0 G=0.5 B=0.6 W=0.0
+    _SET_SB_NOZZLE R=0.0 G=0.0 B=0.0 W=0.5
+
+[gcode_macro STATUS_PRINTING]
+description: Active Printing (Red Voron logo, bright white nozzle & chamber)
+gcode:
+    _SET_SB_LOGO R=0.8 G=0.0 B=0.0 W=0.0
+    _SET_SB_NOZZLE R=0.0 G=0.0 B=0.0 W=1.0
+    CHAMBER_LIGHTS_ON
+
+[gcode_macro STATUS_DONE]
+description: Print Finished (Bright Green status, dim chamber)
+gcode:
+    _SET_SB_LOGO R=0.0 G=0.8 B=0.0 W=0.0
+    _SET_SB_NOZZLE R=0.0 G=0.0 B=0.0 W=0.0
+    CHAMBER_LIGHTS_DIM
+
+[gcode_macro STATUS_OFF]
+description: Turns off all toolhead and chamber LEDs
+gcode:
+    _SET_SB_LOGO R=0.0 G=0.0 B=0.0 W=0.0
+    _SET_SB_NOZZLE R=0.0 G=0.0 B=0.0 W=0.0
+    CHAMBER_LIGHTS_OFF
+[gcode_macro CLEAN_NOZZLE]
+description: Wipes nozzle on back-left copper brush (1 inch above bed) with catch tray
+gcode:
+    # ==================================================================
+    # 1. USER COORDINATES (Adjust these once printer is powered up!)
+    # ==================================================================
+    {% set start_x = 15.0 %}           # Left edge of the copper brush
+    {% set end_x = 55.0 %}             # Right edge of the copper brush (40mm wide stroke)
+    {% set brush_y = 345.0 %}          # Y center of the brush (back-left of 350mm bed)
+    {% set tray_x = 5.0 %}             # X position over your glop catch tray (to the left of brush)
+
+    # Z-HEIGHTS (CRITICAL: Your brush sticks up ~25.4mm / 1 inch above bed)
+    {% set z_safe = 35.0 %}            # Safe travel height (10mm ABOVE brush/tray)
+    {% set z_wipe = 24.0 %}            # Wiping height (nozzle tip grazing top of copper bristles)
+
+    # WIPE SETTINGS
+    {% set wipe_count = 6 %}           # Number of back-and-forth passes
+    {% set wipe_speed = 9000 %}        # Wipe speed in mm/min (150 mm/s)
+
+    # ==================================================================
+    # 2. SAFETY CHECKS
+    # ==================================================================
+    # Ensure printer is homed before moving so we don't crash
+    {% if "xyz" not in printer.toolhead.homed_axes %}
+        G28
+    {% endif %}
+
+    # Save current G-code state (speeds, absolute/relative mode) so we restore it cleanly at the end
+    SAVE_GCODE_STATE NAME=CLEAN_NOZZLE_STATE
+    G90                                # Force absolute positioning
+
+    # ==================================================================
+    # 3. APPROACH & WIPE SEQUENCE
+    # ==================================================================
+    M117 Cleaning Nozzle...
+
+    # Lift to Z35 FIRST before moving XY so we clear the 1-inch tall brush/tray
+    {% if printer.toolhead.position.z < z_safe %}
+        G1 Z{z_safe} F3000
+    {% endif %}
+
+    # Move over the catch tray first so any hanging ooze drops into the tray, not on the bed
+    G1 X{tray_x} Y{brush_y} F9000
+
+    # Drop down to wiping height (Z24)
+    G1 Z{z_wipe} F3000
+
+    # Scrub back and forth across the copper brush
+    {% for i in range(wipe_count) %}
+        G1 X{end_x} F{wipe_speed}      # Wipe right
+        G1 X{start_x} F{wipe_speed}    # Wipe left
+    {% endfor %}
+
+    # Finish final stroke over the catch tray to knock any loose debris into the tray
+    G1 X{tray_x} F{wipe_speed}
+
+    # ==================================================================
+    # 4. SAFE EXIT
+    # ==================================================================
+    # Lift back up to Z35 BEFORE moving away from the brush area
+    G1 Z{z_safe} F3000
+
+    RESTORE_GCODE_STATE NAME=CLEAN_NOZZLE_STATE
+    M117 Nozzle Clean!
+
+

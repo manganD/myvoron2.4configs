@@ -6,7 +6,7 @@
 # Probe:     Voron Tap (on EBB) | Endstops: X & Y Mechanical (on EBB)
 # LEDs:      StealthBurner (on EBB) | Chamber NeoPixels (on Kraken)
 # =====================================================================
-
+[exempt object]
 [include mainsail.cfg]
 
 # ---------------------------------------------------------------------

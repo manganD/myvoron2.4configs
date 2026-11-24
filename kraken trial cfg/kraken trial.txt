@@ -1,0 +1,463 @@
+# =====================================================================
+# Voron 2.4 350mm - LDO CNC AWD (24V)
+# Mainboard: BTT Kraken v1.1 (STM32H723)
+# Toolhead:  BTT EBB SB2209 CAN (RP2040)
+# Motors:    LDO-42STH48-2504AH (All Axes)
+# Probe:     Voron Tap (on EBB) | Endstops: X & Y Mechanical (on EBB)
+# LEDs:      StealthBurner (on EBB) | Chamber NeoPixels (on Kraken)
+# =====================================================================
+
+[include mainsail.cfg]
+
+# ---------------------------------------------------------------------
+# MCU & Host Definitions
+# ---------------------------------------------------------------------
+[mcu]
+# Replace with your Kraken CAN UUID or USB serial path
+canbus_uuid: 000000000000
+# serial: /dev/serial/by-id/usb-Klipper_stm32h723xx_REPLACE_ME-if00
+
+[mcu EBBCan]
+# Replace with your EBB SB2209 (RP2040) CAN UUID
+canbus_uuid: 000000000000
+
+[mcu rpi]
+serial: /tmp/klipper_host_mcu
+
+# ---------------------------------------------------------------------
+# Printer Kinematics & Limits
+# ---------------------------------------------------------------------
+[printer]
+kinematics: corexy
+max_velocity: 500
+max_accel: 10000
+max_z_velocity: 30
+max_z_accel: 350
+square_corner_velocity: 5.0
+
+# ---------------------------------------------------------------------
+# Input Shaper (EBB SB2209 Onboard ADXL345)
+# ---------------------------------------------------------------------
+[adxl345]
+cs_pin: EBBCan:gpio1
+spi_software_sclk_pin: EBBCan:gpio2
+spi_software_mosi_pin: EBBCan:gpio0
+spi_software_miso_pin: EBBCan:gpio3
+axes_map: z,-y,x
+
+[resonance_tester]
+probe_points: 175, 175, 20
+accel_chip: adxl345
+
+# ---------------------------------------------------------------------
+# X/Y Steppers - LDO CNC AWD (LDO-42STH48-2504AH @ 24V)
+# Mapped to High-Current S1 - S4 (Kraken v1.1 sense_resistor: 0.050)
+# ---------------------------------------------------------------------
+
+## B Motor (Rear Left) - Slot S1
+[stepper_x]
+step_pin: PC14
+dir_pin: !PC13
+enable_pin: !PE6
+rotation_distance: 40
+microsteps: 32
+full_steps_per_rotation: 200
+endstop_pin: ^EBBCan:gpio24
+position_min: 0
+position_endstop: 350
+position_max: 350
+homing_speed: 60
+homing_retract_dist: 5
+homing_positive_dir: true
+
+[tmc5160 stepper_x]
+cs_pin: PD6
+spi_software_sclk_pin: PC6
+spi_software_mosi_pin: PC8
+spi_software_miso_pin: PC7
+interpolate: false
+run_current: 1.4
+sense_resistor: 0.050
+stealthchop_threshold: 0
+
+## B1 Motor (Front Left AWD) - Slot S2
+[stepper_x1]
+step_pin: PE5
+dir_pin: PE4
+enable_pin: !PE3
+rotation_distance: 40
+microsteps: 32
+full_steps_per_rotation: 200
+
+[tmc5160 stepper_x1]
+cs_pin: PD5
+spi_software_sclk_pin: PC6
+spi_software_mosi_pin: PC8
+spi_software_miso_pin: PC7
+interpolate: false
+run_current: 1.4
+sense_resistor: 0.050
+stealthchop_threshold: 0
+
+## A Motor (Rear Right) - Slot S3
+[stepper_y]
+step_pin: PE2
+dir_pin: !PE1
+enable_pin: !PE0
+rotation_distance: 40
+microsteps: 32
+full_steps_per_rotation: 200
+endstop_pin: ^EBBCan:gpio21
+position_min: 0
+position_endstop: 340
+position_max: 340
+homing_speed: 60
+homing_retract_dist: 5
+homing_positive_dir: true
+
+[tmc5160 stepper_y]
+cs_pin: PD4
+spi_software_sclk_pin: PC6
+spi_software_mosi_pin: PC8
+spi_software_miso_pin: PC7
+interpolate: false
+run_current: 1.4
+sense_resistor: 0.050
+stealthchop_threshold: 0
+
+## A1 Motor (Front Right AWD) - Slot S4
+[stepper_y1]
+step_pin: PB9
+dir_pin: PB8
+enable_pin: !PB7
+rotation_distance: 40
+microsteps: 32
+full_steps_per_rotation: 200
+
+[tmc5160 stepper_y1]
+cs_pin: PD3
+spi_software_sclk_pin: PC6
+spi_software_mosi_pin: PC8
+spi_software_miso_pin: PC7
+interpolate: false
+run_current: 1.4
+sense_resistor: 0.050
+stealthchop_threshold: 0
+
+# ---------------------------------------------------------------------
+# Z Steppers - Quad Gantry (LDO-42STH48-2504AH @ 24V)
+# Mapped to S5 - S8 (Kraken v1.1 sense_resistor: 0.075)
+# ---------------------------------------------------------------------
+
+## Z0 Stepper - Front Left - Slot S5
+[stepper_z]
+step_pin: PG9
+dir_pin: !PG10
+enable_pin: !PG13
+rotation_distance: 40
+gear_ratio: 80:16
+microsteps: 32
+endstop_pin: probe:z_virtual_endstop
+position_max: 310
+position_min: -5
+homing_speed: 8
+second_homing_speed: 3
+homing_retract_dist: 3
+
+[tmc5160 stepper_z]
+cs_pin: PD2
+spi_software_sclk_pin: PC6
+spi_software_mosi_pin: PC8
+spi_software_miso_pin: PC7
+interpolate: false
+run_current: 1.0
+sense_resistor: 0.075
+stealthchop_threshold: 0
+
+## Z1 Stepper - Rear Left - Slot S6
+[stepper_z1]
+step_pin: PG11
+dir_pin: PD7
+enable_pin: !PG12
+rotation_distance: 40
+gear_ratio: 80:16
+microsteps: 32
+
+[tmc5160 stepper_z1]
+cs_pin: PA15
+spi_software_sclk_pin: PC6
+spi_software_mosi_pin: PC8
+spi_software_miso_pin: PC7
+interpolate: false
+run_current: 1.0
+sense_resistor: 0.075
+stealthchop_threshold: 0
+
+## Z2 Stepper - Rear Right - Slot S7
+[stepper_z2]
+step_pin: PB4
+dir_pin: !PB3
+enable_pin: !PB5
+rotation_distance: 40
+gear_ratio: 80:16
+microsteps: 32
+
+[tmc5160 stepper_z2]
+cs_pin: PA9
+spi_software_sclk_pin: PC6
+spi_software_mosi_pin: PC8
+spi_software_miso_pin: PC7
+interpolate: false
+run_current: 1.0
+sense_resistor: 0.075
+stealthchop_threshold: 0
+
+## Z3 Stepper - Front Right - Slot S8
+[stepper_z3]
+step_pin: PG15
+dir_pin: PB6
+enable_pin: !PG14
+rotation_distance: 40
+gear_ratio: 80:16
+microsteps: 32
+
+[tmc5160 stepper_z3]
+cs_pin: PA10
+spi_software_sclk_pin: PC6
+spi_software_mosi_pin: PC8
+spi_software_miso_pin: PC7
+interpolate: false
+run_current: 1.0
+sense_resistor: 0.075
+stealthchop_threshold: 0
+
+# ---------------------------------------------------------------------
+# Extruder & Hotend (Mosquito + 40W Heater + Generic NTC on EBB SB2209)
+# ---------------------------------------------------------------------
+[extruder]
+step_pin: EBBCan:gpio18
+dir_pin: !EBBCan:gpio19
+enable_pin: !EBBCan:gpio17
+rotation_distance: 22.6789511
+gear_ratio: 50:10
+microsteps: 32
+full_steps_per_rotation: 200
+nozzle_diameter: 0.400
+filament_diameter: 1.75
+heater_pin: EBBCan:gpio7
+sensor_type: Generic 3950
+sensor_pin: EBBCan:gpio27
+max_power: 1.0
+min_temp: 10
+max_temp: 300
+min_extrude_temp: 170
+control: pid
+pid_Kp: 26.213
+pid_Ki: 1.304
+pid_Kd: 131.721
+pressure_advance: 0.040
+pressure_advance_smooth_time: 0.040
+
+[tmc2209 extruder]
+uart_pin: EBBCan:gpio20
+run_current: 0.650
+stealthchop_threshold: 0
+
+# ---------------------------------------------------------------------
+# Heated Bed (SSR on Kraken Bed Out + Generic NTC on THB)
+# ---------------------------------------------------------------------
+[heater_bed]
+heater_pin: PF5
+sensor_type: Generic 3950
+sensor_pin: PB1
+max_power: 0.75
+min_temp: 0
+max_temp: 120
+control: pid
+pid_Kp: 58.437
+pid_Ki: 2.347
+pid_Kd: 363.769
+
+# ---------------------------------------------------------------------
+# Probe - Voron Tap (on EBB SB2209)
+# ---------------------------------------------------------------------
+[probe]
+pin: ^EBBCan:gpio6
+x_offset: 0
+y_offset: 0
+z_offset: -0.800
+speed: 5.0
+samples: 3
+samples_result: median
+sample_retract_dist: 2.0
+samples_tolerance: 0.006
+samples_tolerance_retries: 3
+activate_gcode:
+    {% set PROBE_TEMP = 150 %}
+    {% set MAX_TEMP = PROBE_TEMP + 5 %}
+    {% set ACTUAL_TEMP = printer.extruder.temperature %}
+    {% set TARGET_TEMP = printer.extruder.target %}
+
+    {% if TARGET_TEMP > PROBE_TEMP %}
+        { action_respond_info('Extruder temperature target of %.1fC is too high, lowering to %.1fC' % (TARGET_TEMP, PROBE_TEMP)) }
+        M109 S{ PROBE_TEMP }
+    {% else %}
+        {% if ACTUAL_TEMP > MAX_TEMP %}
+            { action_respond_info('Extruder temperature %.1fC is still too high, waiting until below %.1fC' % (ACTUAL_TEMP, MAX_TEMP)) }
+            TEMPERATURE_WAIT SENSOR=extruder MAXIMUM={ MAX_TEMP }
+        {% endif %}
+    {% endif %}
+
+# ---------------------------------------------------------------------
+# Fans (Toolhead on EBB + Electronics/Bed Fans on Kraken)
+# ---------------------------------------------------------------------
+[fan]
+# Part Cooling Fan (EBB FAN1)
+pin: EBBCan:gpio13
+kick_start_time: 0.5
+off_below: 0.10
+
+[heater_fan hotend_fan]
+# Hotend Fan (EBB FAN2)
+pin: EBBCan:gpio14
+max_power: 1.0
+kick_start_time: 0.5
+heater: extruder
+heater_temp: 50.0
+
+[controller_fan controller_fan]
+# Electronics Bay Fan (Kraken FAN0)
+pin: PA0
+kick_start_time: 0.5
+heater: heater_bed
+
+[fan_generic exhaust_fan]
+# Exhaust / Nevermore Fan (Kraken FAN1)
+pin: PA1
+max_power: 1.0
+shutdown_speed: 0.0
+kick_start_time: 5.0
+
+# ---------------------------------------------------------------------
+# Additional Temperature Sensors (RPi 4, Chamber, Kraken, EBB)
+# ---------------------------------------------------------------------
+[temperature_sensor raspberry_pi]
+sensor_type: temperature_host
+min_temp: 10
+max_temp: 100
+
+[temperature_sensor kraken_mcu]
+sensor_type: temperature_mcu
+min_temp: 0
+max_temp: 100
+
+[temperature_sensor EBBCan]
+sensor_type: temperature_mcu
+sensor_mcu: EBBCan
+min_temp: 0
+max_temp: 100
+
+[temperature_sensor chamber]
+# Plugged into Kraken TH0
+sensor_type: Generic 3950
+sensor_pin: PB0
+min_temp: 0
+max_temp: 100
+
+# ---------------------------------------------------------------------
+# LEDs (StealthBurner on EBB SB2209 + Chamber NeoPixels on Kraken RGB1)
+# ---------------------------------------------------------------------
+[neopixel sb_leds]
+pin: EBBCan:gpio16
+chain_count: 3
+color_order: GRBW
+initial_RED: 0.1
+initial_GREEN: 0.0
+initial_BLUE: 0.2
+initial_WHITE: 0.0
+
+[neopixel chamber_leds]
+# Kraken RGB1 port = PF12 (RGB2 port = PF11)
+pin: PF12
+chain_count: 36
+color_order: GRB
+initial_RED: 0.5
+initial_GREEN: 0.5
+initial_BLUE: 0.5
+
+# ---------------------------------------------------------------------
+# Homing & Quad Gantry Leveling (350mm AWD)
+# ---------------------------------------------------------------------
+[safe_z_home]
+home_xy_position: 175, 170
+speed: 150
+z_hop: 10
+
+[quad_gantry_level]
+gantry_corners:
+   -60,-10
+   410,420
+points:
+   50,25
+   50,265
+   300,265
+   300,25
+speed: 200
+horizontal_move_z: 10
+retries: 5
+retry_tolerance: 0.0075
+max_adjust: 10
+
+
+[bed_mesh]
+speed: 200
+horizontal_move_z: 5
+mesh_min: 40, 40
+mesh_max: 310, 300
+zero_reference_position: 175, 170
+fade_start: 0.6
+fade_end: 10.0
+probe_count: 7,7
+algorithm: bicubic
+
+# ---------------------------------------------------------------------
+# Macros
+# ---------------------------------------------------------------------
+
+[gcode_macro G32]
+gcode:
+    SAVE_GCODE_STATE NAME=STATE_G32
+    G90
+    G28
+    QUAD_GANTRY_LEVEL
+    G28
+    G0 X175 Y170 Z30 F3600
+    RESTORE_GCODE_STATE NAME=STATE_G32
+
+[gcode_macro CHAMBER_LIGHTS_ON]
+gcode:
+    SET_LED LED=chamber_leds RED=0.8 GREEN=0.8 BLUE=0.8
+
+[gcode_macro CHAMBER_LIGHTS_OFF]
+gcode:
+    SET_LED LED=chamber_leds RED=0.0 GREEN=0.0 BLUE=0.0
+
+[gcode_macro SB_NOZZLE_ON]
+gcode:
+    SET_LED LED=sb_leds RED=0.0 GREEN=0.0 BLUE=0.0 WHITE=1.0 INDEX=2 TRANSMIT=0
+    SET_LED LED=sb_leds RED=0.0 GREEN=0.0 BLUE=0.0 WHITE=1.0 INDEX=3 TRANSMIT=1
+
+[gcode_macro SB_NOZZLE_OFF]
+gcode:
+    SET_LED LED=sb_leds RED=0.0 GREEN=0.0 BLUE=0.0 WHITE=0.0 INDEX=2 TRANSMIT=0
+    SET_LED LED=sb_leds RED=0.0 GREEN=0.0 BLUE=0.0 WHITE=0.0 INDEX=3 TRANSMIT=1
+    
+[gcode_macro G32]
+gcode:
+SAVE_GCODE_STATE NAME=STATE_G32
+G90
+G28
+QUAD_GANTRY_LEVEL
+G28
+G0 X175 Y170 Z30 F3600
+RESTORE_GCODE_STATE NAME=STATE_G32
